@@ -1882,7 +1882,6 @@ class Trainer:
             finally:
                 hf_hub_utils.enable_progress_bars()
         else:
-            print("\n##### inner training loop #####\n")
             return inner_training_loop(
                 args=args,
                 resume_from_checkpoint=resume_from_checkpoint,
@@ -1893,6 +1892,8 @@ class Trainer:
     def _inner_training_loop(
         self, batch_size=None, args=None, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None
     ):
+        print("\n##### inner training loop #####\n")
+        print(f'batch size: {self._train_batch_size}')
         self.accelerator.free_memory()
         self._train_batch_size = batch_size
         if self.args.auto_find_batch_size:
@@ -1911,6 +1912,7 @@ class Trainer:
                     self.args.per_device_train_batch_size = original_bs
             self.state.train_batch_size = self._train_batch_size
         logger.debug(f"Currently training with a batch size of: {self._train_batch_size}")
+        print(f"Currently training with a batch size of: {self._train_batch_size}")
         # Data loader and number of training steps
         train_dataloader = self.get_train_dataloader()
         if self.is_fsdp_xla_v2_enabled:
@@ -2214,7 +2216,6 @@ class Trainer:
                     self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
 
                 with self.accelerator.accumulate(model):
-                    print("\n##### training step #####\n")
                     tr_loss_step = self.training_step(model, inputs)
 
                 if (
@@ -3229,7 +3230,7 @@ class Trainer:
         Return:
             `torch.Tensor`: The tensor with training loss on this batch.
         """
-        print("\n######################### training step #########################\n")
+        # print("### training step ###")
         model.train()
         inputs = self._prepare_inputs(inputs)
 
@@ -3250,7 +3251,7 @@ class Trainer:
             with amp.scale_loss(loss, self.optimizer) as scaled_loss:
                 scaled_loss.backward()
         else:
-            print("\n############# accelerator loss backward #############n")
+            # print("############# accelerator loss backward #############")
             self.accelerator.backward(loss)
 
         return loss.detach() / self.args.gradient_accumulation_steps
@@ -3262,7 +3263,7 @@ class Trainer:
         Subclass and override for custom behavior.
         """
 
-        print("\n######## computing loss ########n")
+        # print("######## computing loss ########")
 
         if self.label_smoother is not None and "labels" in inputs:
             labels = inputs.pop("labels")
@@ -3293,9 +3294,9 @@ class Trainer:
             # We don't use .loss here since the model may return tuples instead of ModelOutput.
             loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
 
-        print("\n######## loss computed ########n")
-        print('loss:', loss)
-        print()
+        # print("######## loss computed ########")
+        # print('loss:', loss)
+        # print()
       
         return (loss, outputs) if return_outputs else loss
 
