@@ -1912,7 +1912,6 @@ class Trainer:
                     self.args.per_device_train_batch_size = original_bs
             self.state.train_batch_size = self._train_batch_size
         logger.debug(f"Currently training with a batch size of: {self._train_batch_size}")
-        print(f"Currently training with a batch size of: {self._train_batch_size}")
         # Data loader and number of training steps
         train_dataloader = self.get_train_dataloader()
         if self.is_fsdp_xla_v2_enabled:
@@ -3269,9 +3268,14 @@ class Trainer:
             labels = inputs.pop("labels")
         else:
             labels = None
-        outputs = model(**inputs)
-        
+            
         ### MODIFIED CODE ### 
+        
+        model.get_decoder().project_out.reset_latent_loss()
+        outputs = model(**inputs)
+        latent_loss = model.get_decoder().project_out.latent_loss
+        # print(f'latent_loss: {latent_loss}')
+        
         
         criterion = nn.MSELoss()
 
@@ -3279,15 +3283,10 @@ class Trainer:
 
         # mse_sum = 0
         # mse_n = 0
-        latent_loss = outputs["loss"]
-        if "logits" in outputs:
-            print(f' logits: {outputs["logits"]} type: {type(outputs["logits"])}')
-        print(f' output keys: {outputs.keys()}, model type: {model}')
-        
-        recon_loss = criterion(outputs["logits"], inputs)
-        latent_loss = latent_loss.mean()
-        loss = recon_loss + (latent_loss_weight * latent_loss)
 
+        latent_loss = latent_loss.mean()
+
+        # print(latent_loss)
         ### MODIFIED CODE ### 
         
         # Save past state if it exists
@@ -3318,7 +3317,7 @@ class Trainer:
         # print('loss:', loss)
         # print()
       
-        return (loss, outputs) if return_outputs else loss
+        return (loss + latent_loss, outputs) if return_outputs else loss + latent_loss
 
     def is_local_process_zero(self) -> bool:
         """
