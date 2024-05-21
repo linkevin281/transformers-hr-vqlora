@@ -16,6 +16,7 @@
 The Trainer class, to easily train a 🤗 Transformers from scratch or finetune it on a new task.
 """
 
+import traceback
 import contextlib
 import copy
 import functools
@@ -3263,33 +3264,12 @@ class Trainer:
         Subclass and override for custom behavior.
         """
 
-        # print("######## computing loss ########")
 
         if self.label_smoother is not None and "labels" in inputs:
             labels = inputs.pop("labels")
         else:
             labels = None
         outputs = model(**inputs)
-        
-        ### MODIFIED CODE ### 
-        
-        criterion = nn.MSELoss()
-
-        latent_loss_weight = 0.25
-
-        # mse_sum = 0
-        # mse_n = 0
-        latent_loss = outputs["loss"]
-        if "logits" in outputs:
-            print(f' logits: {outputs["logits"]} type: {type(outputs["logits"])}')
-        print(f' output keys: {outputs.keys()}, model type: {model}')
-        
-        recon_loss = criterion(outputs["logits"], inputs)
-        latent_loss = latent_loss.mean()
-        loss = recon_loss + (latent_loss_weight * latent_loss)
-
-        ### MODIFIED CODE ### 
-        
         # Save past state if it exists
         # TODO: this needs to be fixed and made cleaner later.
         if self.args.past_index >= 0:
@@ -3313,10 +3293,6 @@ class Trainer:
                 )
             # We don't use .loss here since the model may return tuples instead of ModelOutput.
             loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
-
-        # print("######## loss computed ########")
-        # print('loss:', loss)
-        # print()
       
         return (loss, outputs) if return_outputs else loss
 
