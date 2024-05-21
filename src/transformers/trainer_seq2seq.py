@@ -17,9 +17,13 @@ from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
+import wandb
+
 import torch
 from torch import nn
 from torch.utils.data import Dataset
+
+from peft.tuners.lora.bnb import Linear4bit
 
 from .generation.configuration_utils import GenerationConfig
 from .integrations.deepspeed import is_deepspeed_zero3_enabled
@@ -74,6 +78,54 @@ class Seq2SeqTrainer(Trainer):
             gen_config = self.load_generation_config(self.args.generation_config)
             self.model.generation_config = gen_config
 
+    def compute_loss(self, model, inputs, return_outputs=False):
+        """
+        Custom loss function for HR-VQLoRA model. 
+        
+        Overwrites the default loss function in the Trainer class.
+        """
+        
+        print("######## computing loss ########")
+
+        outputs = model(**inputs)
+        loss = outputs.loss
+        
+        hr_modules = self.find_all_modules(self.args, model, Linear4bit)
+        losses = {}
+        for name, module in hr_modules:
+            losses[name] = module.hr_vqlora_loss
+        
+        codebook_losses = list(losses.values())
+        codebook_loss_mean = torch.mean(torch.tensor(codebook_losses))
+        codebook_loss_std = torch.std(torch.tensor(codebook_losses))
+        codebook_loss_25 = torch.quantile(torch.tensor(codebook_losses), 0.25)
+        codebook_loss_75 = torch.quantile(torch.tensor(codebook_losses), 0.75)
+        
+        wandb.log({
+            'codebook_loss_mean': codebook_loss_mean,
+            'codebook_loss_std': codebook_loss_std,
+            'codebook_loss_25': codebook_loss_25,
+            'codebook_loss_75': codebook_loss_75,
+            'actual_loss': loss
+        })
+        print(f'Codebook Loss: mean: {codebook_loss_mean}, std: {codebook_loss_std}, 25th: {codebook_loss_25}, 75th: {codebook_loss_75}')
+        print(f'Actual Loss: {loss}')
+        
+        return (loss, outputs) if return_outputs else loss        
+    
+    def find_all_modules(self, args, model, layer: torch.nn.Module) -> list[(str, torch.nn.Module)]:
+        """
+        Finds all the modules in the model that are of type layer.
+        """
+        target_modules = set()
+        for name, module in model.named_modules():
+            if isinstance(module, layer):
+                # print(f"Found {layer} module: {name}")
+                target_modules.add((name, module))
+            # else:
+                # print(f"Found other module: {name}")
+        return list(target_modules)
+        
     @staticmethod
     def load_generation_config(gen_config_arg: Union[str, GenerationConfig]) -> GenerationConfig:
         """
