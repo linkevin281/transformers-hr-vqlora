@@ -3271,10 +3271,31 @@ class Trainer:
             
         ### MODIFIED CODE ### 
         
-        model.get_decoder().project_out.reset_latent_loss()
+        # 32 LlamaDecoderLayers
+        for LlamaDecoderLayer in model.get_decoder().layers._modules.values():
+            # print(type(LlamaDecoderLayer.mlp.down_proj))
+            # print('Resetting latent_loss')
+            LlamaDecoderLayer.self_attn.o_proj.reset_latent_loss()
+            # print('O_PROJ')
+            # print(LlamaDecoderLayer.self_attn.o_proj)
+        
         outputs = model(**inputs)
-        latent_loss = model.get_decoder().project_out.latent_loss
-        # print(f'latent_loss: {latent_loss}')
+
+        latent_loss_total = []
+        # latent_loss = None
+        # latent_layers = 0
+        for LlamaDecoderLayer in model.get_decoder().layers._modules.values():
+            LlamaDecoderLayer.mlp.down_proj.reset_latent_loss()
+            # print('######### IN DECODER LOOP #########')
+            # print(LlamaDecoderLayer.self_attn.o_proj.get_latent_loss())
+            latent_loss_total.append(LlamaDecoderLayer.self_attn.o_proj.get_latent_loss())
+            # print(id(LlamaDecoderLayer.self_attn.o_proj))
+            # if latent_loss == None:
+            #     latent_loss = LlamaDecoderLayer.self_attn.o_proj.get_latent_loss()
+            # else:
+            #     latent_loss = latent_loss + LlamaDecoderLayer.self_attn.o_proj.get_latent_loss()
+            # latent_layers += 1
+        # print(f'total latent_loss: {latent_loss_total}')
         
         
         criterion = nn.MSELoss()
@@ -3284,7 +3305,16 @@ class Trainer:
         # mse_sum = 0
         # mse_n = 0
 
-        latent_loss = latent_loss.mean()
+        if len(latent_loss_total) != 0:
+            latent_loss = torch.mean(torch.stack(latent_loss_total))
+        else:
+            latent_loss = torch.mean(torch.zeros([1]))
+
+        # print(f'mean latent_loss: {latent_loss}')
+
+        latent_loss = latent_loss * latent_loss_weight
+
+        # print(f'weighted latent_loss: {latent_loss}')
 
         # print(latent_loss)
         ### MODIFIED CODE ### 
