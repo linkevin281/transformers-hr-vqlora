@@ -84,8 +84,6 @@ class Seq2SeqTrainer(Trainer):
         
         Overwrites the default loss function in the Trainer class.
         """
-        
-        print("######## computing loss ########")
 
         outputs = model(**inputs)
         loss = outputs.loss
@@ -94,23 +92,7 @@ class Seq2SeqTrainer(Trainer):
         losses = {}
         for name, module in hr_modules:
             losses[name] = module.hr_vqlora_loss
-        
-        codebook_losses = list(losses.values())
-        codebook_loss_mean = torch.mean(torch.tensor(codebook_losses))
-        codebook_loss_std = torch.std(torch.tensor(codebook_losses))
-        codebook_loss_25 = torch.quantile(torch.tensor(codebook_losses), 0.25)
-        codebook_loss_75 = torch.quantile(torch.tensor(codebook_losses), 0.75)
-        
-        wandb.log({
-            'codebook_loss_mean': codebook_loss_mean,
-            'codebook_loss_std': codebook_loss_std,
-            'codebook_loss_25': codebook_loss_25,
-            'codebook_loss_75': codebook_loss_75,
-            'actual_loss': loss
-        })
-        print(f'Codebook Loss: mean: {codebook_loss_mean}, std: {codebook_loss_std}, 25th: {codebook_loss_25}, 75th: {codebook_loss_75}')
-        print(f'Actual Loss: {loss}')
-        
+
         return (loss, outputs) if return_outputs else loss        
     
     def find_all_modules(self, args, model, layer: torch.nn.Module) -> list[(str, torch.nn.Module)]:
