@@ -16,6 +16,7 @@
 The Trainer class, to easily train a 🤗 Transformers from scratch or finetune it on a new task.
 """
 
+import wandb
 import traceback
 import contextlib
 import copy
@@ -2142,6 +2143,7 @@ class Trainer:
 
         # tr_loss is a tensor to avoid synchronization of TPUs through .item()
         tr_loss = torch.tensor(0.0).to(args.device)
+        # tr_loss_codebook = torch.tensor(0.0).to(args.device)
         # _total_loss_scalar is updated everytime .item() has to be called on tr_loss and stores the sum of all losses
         self._total_loss_scalar = 0.0
         self._globalstep_last_logged = self.state.global_step
@@ -2231,6 +2233,7 @@ class Trainer:
                         raise ValueError(
                             f"Calculated loss must be on the original device: {tr_loss.device} but device in use is {tr_loss_step.device}"
                         )
+                    # print(f'Trainer      || updated tr loss with tr loss step: {tr_loss_step}, it looks like tr_loss is some kind of reduced loss / loss is cut in half, jk its loss divided by 16 (batch size)')
                     tr_loss += tr_loss_step
 
                 self.current_flos += float(self.floating_point_ops(inputs))
@@ -3234,17 +3237,19 @@ class Trainer:
         # print("### training step ###")
         model.train()
         inputs = self._prepare_inputs(inputs)
+        # print("trainer      || We runnign this?") A: Yes we are 
 
         if is_sagemaker_mp_enabled():
             loss_mb = smp_forward_backward(model, inputs, self.args.gradient_accumulation_steps)
             return loss_mb.reduce_mean().detach().to(self.args.device)
 
         with self.compute_loss_context_manager():
-            loss = self.compute_loss(model, inputs)
+            loss, codebook = self.compute_loss(model, inputs)
+            # wandb.log({"loss": loss, "codebook": codebook})            
 
         del inputs
         torch.cuda.empty_cache()
-
+        # print(f'trainer - training_step      || loss: {loss}, type: {type(loss)}, requiregrad: {loss.requires_grad}')
         if self.args.n_gpu > 1:
             loss = loss.mean()  # mean() to average on multi-gpu parallel training
 
@@ -3264,7 +3269,7 @@ class Trainer:
         Subclass and override for custom behavior.
         """
 
-
+        # print('trainer      || shi we should not be running this') # we arent
         if self.label_smoother is not None and "labels" in inputs:
             labels = inputs.pop("labels")
         else:
@@ -3294,6 +3299,7 @@ class Trainer:
             # We don't use .loss here since the model may return tuples instead of ModelOutput.
             loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
       
+        # print(f'trainer, compute_loss, loss: {loss}, type: {type(loss)}, requiregrad: {loss.requires_grad}')
         return (loss, outputs) if return_outputs else loss
 
     def is_local_process_zero(self) -> bool:

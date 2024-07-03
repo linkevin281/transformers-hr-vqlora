@@ -90,10 +90,18 @@ class Seq2SeqTrainer(Trainer):
         
         hr_modules = self.find_all_modules(self.args, model, Linear4bit)
         losses = {}
+        codebook_loss = torch.tensor(0.0, requires_grad=True)
         for name, module in hr_modules:
             losses[name] = module.hr_vqlora_loss
+            codebook_loss = module.hr_vqlora_loss + codebook_loss # dont do += here or the error is "a leaf variable that requires grad is being used in an in-place operation"
+        # print(f"seq2seq      || does loss reuqires grad? {loss.requires_grad}, type(loss): {type(loss)}")
+        # print(f'seq2seq      || does codebook loss require grad? {codebook_loss.requires_grad}') ## We want to ensure that codebook loss is part of the computation graph, it does 
+        total_loss = loss + codebook_loss
+        print(f"seq2seq      || loss: {loss}, codebook_loss: {codebook_loss}, total_loss: {total_loss}, typetotal_loss: {type(total_loss)}")
 
-        return (loss, outputs) if return_outputs else loss        
+        # wandb.log({"loss": loss.item(), "codebook_loss": codebook_loss.item(), "total_loss": total_loss.item()})        
+        
+        return (total_loss, outputs) if return_outputs else total_loss, codebook_loss   
     
     def find_all_modules(self, args, model, layer: torch.nn.Module) -> list[(str, torch.nn.Module)]:
         """
