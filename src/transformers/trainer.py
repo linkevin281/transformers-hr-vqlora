@@ -2143,7 +2143,8 @@ class Trainer:
 
         # tr_loss is a tensor to avoid synchronization of TPUs through .item()
         tr_loss = torch.tensor(0.0).to(args.device)
-        # tr_loss_codebook = torch.tensor(0.0).to(args.device)
+        tr_loss_codebook = torch.tensor(0.0).to(args.device)
+        tr_loss_og = torch.tensor(0.0).to(args.device)
         # _total_loss_scalar is updated everytime .item() has to be called on tr_loss and stores the sum of all losses
         self._total_loss_scalar = 0.0
         self._globalstep_last_logged = self.state.global_step
@@ -2219,7 +2220,8 @@ class Trainer:
                     self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
 
                 with self.accelerator.accumulate(model):
-                    tr_loss_step = self.training_step(model, inputs)
+                    loss_object = self.training_step(model, inputs)
+                    tr_loss_step = loss_object["total_loss"]
 
                 if (
                     args.logging_nan_inf_filter
@@ -2235,6 +2237,8 @@ class Trainer:
                         )
                     # print(f'Trainer      || updated tr loss with tr loss step: {tr_loss_step}, it looks like tr_loss is some kind of reduced loss / loss is cut in half, jk its loss divided by 16 (batch size)')
                     tr_loss += tr_loss_step
+                    tr_loss_codebook += loss_object["codebook_loss"]
+                    tr_loss_og += loss_object["og_loss"]
 
                 self.current_flos += float(self.floating_point_ops(inputs))
 
@@ -2349,7 +2353,10 @@ class Trainer:
         self._total_loss_scalar += tr_loss.item()
         effective_global_step = max(self.state.global_step, 0.001)  # Avoid ZeroDivisionError
         train_loss = self._total_loss_scalar / effective_global_step
+        train_codebook_loss = tr_loss_codebook.item() / effective_global_step
+        train_og_loss = tr_loss_og.item() / effective_global_step
 
+        wandb.log({"train_loss": train_loss, "train_codebook_loss": train_codebook_loss, "train_og_loss": train_og_loss})
         metrics = speed_metrics(
             "train",
             start_time,
@@ -3246,7 +3253,6 @@ class Trainer:
         with self.compute_loss_context_manager():
             loss_object = self.compute_loss(model, inputs)
             loss = loss_object["total_loss"]
-            # wandb.log({"loss": loss, "codebook": codebook})
 
         del inputs
         torch.cuda.empty_cache()
@@ -3261,7 +3267,11 @@ class Trainer:
             # print("############# accelerator loss backward #############")
             self.accelerator.backward(loss)
 
-        return loss.detach() / self.args.gradient_accumulation_steps
+        for key, tensor in loss_object.items():
+            tensor.detach()
+            loss_object[key] = tensor / self.args.gradient_accumulation_steps
+
+        return loss_object
 
     def compute_loss(self, model, inputs, return_outputs=False):
         """
