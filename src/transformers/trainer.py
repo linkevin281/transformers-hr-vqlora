@@ -3237,15 +3237,15 @@ class Trainer:
         # print("### training step ###")
         model.train()
         inputs = self._prepare_inputs(inputs)
-        # print("trainer      || We runnign this?") A: Yes we are 
+        # print("trainer      || We runnign this?") A: Yes we are
 
         if is_sagemaker_mp_enabled():
             loss_mb = smp_forward_backward(model, inputs, self.args.gradient_accumulation_steps)
             return loss_mb.reduce_mean().detach().to(self.args.device)
 
         with self.compute_loss_context_manager():
-            loss, codebook = self.compute_loss(model, inputs)
-            # wandb.log({"loss": loss, "codebook": codebook})            
+            loss = self.compute_loss(model, inputs)
+            # wandb.log({"loss": loss, "codebook": codebook})
 
         del inputs
         torch.cuda.empty_cache()
@@ -3298,7 +3298,7 @@ class Trainer:
                 )
             # We don't use .loss here since the model may return tuples instead of ModelOutput.
             loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
-      
+
         # print(f'trainer, compute_loss, loss: {loss}, type: {type(loss)}, requiregrad: {loss.requires_grad}')
         return (loss, outputs) if return_outputs else loss
 

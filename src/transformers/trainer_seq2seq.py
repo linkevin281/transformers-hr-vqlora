@@ -80,14 +80,14 @@ class Seq2SeqTrainer(Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False):
         """
-        Custom loss function for HR-VQLoRA model. 
-        
+        Custom loss function for HR-VQLoRA model.
+
         Overwrites the default loss function in the Trainer class.
         """
 
         outputs = model(**inputs)
         loss = outputs.loss
-        
+
         hr_modules = self.find_all_modules(self.args, model, Linear4bit)
         losses = {}
         codebook_loss = torch.tensor(0.0, requires_grad=True)
@@ -95,14 +95,14 @@ class Seq2SeqTrainer(Trainer):
             losses[name] = module.hr_vqlora_loss
             codebook_loss = module.hr_vqlora_loss + codebook_loss # dont do += here or the error is "a leaf variable that requires grad is being used in an in-place operation"
         # print(f"seq2seq      || does loss reuqires grad? {loss.requires_grad}, type(loss): {type(loss)}")
-        # print(f'seq2seq      || does codebook loss require grad? {codebook_loss.requires_grad}') ## We want to ensure that codebook loss is part of the computation graph, it does 
+        # print(f'seq2seq      || does codebook loss require grad? {codebook_loss.requires_grad}') ## We want to ensure that codebook loss is part of the computation graph, it does
         total_loss = loss + codebook_loss
         print(f"seq2seq      || loss: {loss}, codebook_loss: {codebook_loss}, total_loss: {total_loss}, typetotal_loss: {type(total_loss)}")
 
-        # wandb.log({"loss": loss.item(), "codebook_loss": codebook_loss.item(), "total_loss": total_loss.item()})        
-        
-        return (total_loss, outputs) if return_outputs else total_loss, codebook_loss   
-    
+        # wandb.log({"loss": loss.item(), "codebook_loss": codebook_loss.item(), "total_loss": total_loss.item()})
+
+        return (total_loss, outputs) if return_outputs else total_loss
+
     def find_all_modules(self, args, model, layer: torch.nn.Module) -> list[(str, torch.nn.Module)]:
         """
         Finds all the modules in the model that are of type layer.
@@ -115,7 +115,7 @@ class Seq2SeqTrainer(Trainer):
             # else:
                 # print(f"Found other module: {name}")
         return list(target_modules)
-        
+
     @staticmethod
     def load_generation_config(gen_config_arg: Union[str, GenerationConfig]) -> GenerationConfig:
         """
