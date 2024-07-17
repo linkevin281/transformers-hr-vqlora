@@ -3244,7 +3244,8 @@ class Trainer:
             return loss_mb.reduce_mean().detach().to(self.args.device)
 
         with self.compute_loss_context_manager():
-            loss = self.compute_loss(model, inputs)
+            loss_object = self.compute_loss(model, inputs)
+            loss = loss_object["total_loss"]
             # wandb.log({"loss": loss, "codebook": codebook})
 
         del inputs
@@ -3982,7 +3983,8 @@ class Trainer:
             else:
                 if has_labels or loss_without_labels:
                     with self.compute_loss_context_manager():
-                        loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
+                        loss_object, outputs = self.compute_loss(model, inputs, return_outputs=True)
+                        loss = loss_object["total_loss"]
                     loss = loss.mean().detach()
 
                     if isinstance(outputs, dict):

@@ -78,7 +78,7 @@ class Seq2SeqTrainer(Trainer):
             gen_config = self.load_generation_config(self.args.generation_config)
             self.model.generation_config = gen_config
 
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False) -> Dict[str, torch.Tensor]:
         """
         Custom loss function for HR-VQLoRA model.
 
@@ -101,7 +101,12 @@ class Seq2SeqTrainer(Trainer):
 
         # wandb.log({"loss": loss.item(), "codebook_loss": codebook_loss.item(), "total_loss": total_loss.item()})
 
-        return (total_loss, outputs) if return_outputs else total_loss
+        loss_object = {
+            "total_loss": total_loss,
+            "codebook_loss": codebook_loss,
+            "og_loss": loss
+        }
+        return (loss_object, outputs) if return_outputs else loss_object
 
     def find_all_modules(self, args, model, layer: torch.nn.Module) -> list[(str, torch.nn.Module)]:
         """
