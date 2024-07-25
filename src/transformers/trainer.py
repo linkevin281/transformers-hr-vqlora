@@ -37,6 +37,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
+from peft.tuners.lora.layer import Quantize
+from peft.tuners.lora.bnb import Linear4bit
 
 # Integrations must be imported before ML frameworks:
 # isort: off
@@ -1894,6 +1896,7 @@ class Trainer:
     def _inner_training_loop(
         self, batch_size=None, args=None, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None
     ):
+        traceback.print_stack()
         print("\n##### inner training loop #####\n")
         print(f'batch size: {self._train_batch_size}')
         self.accelerator.free_memory()
@@ -2183,6 +2186,11 @@ class Trainer:
 
             step = -1
             for step, inputs in enumerate(epoch_iterator):
+                if step == args.codebook_start:
+                    self.start_using_codebook(model)
+                    wandb.log({"codebook_used": torch.tensor(step)})
+
+
                 total_batched_samples += 1
 
                 if self.args.include_num_input_tokens_seen:
@@ -2239,6 +2247,8 @@ class Trainer:
                     tr_loss += tr_loss_step
                     tr_loss_codebook += loss_object["codebook_loss"]
                     tr_loss_og += loss_object["og_loss"]
+
+                    del loss_object
 
                 self.current_flos += float(self.floating_point_ops(inputs))
 
@@ -2298,8 +2308,14 @@ class Trainer:
                     self.state.global_step += 1
                     self.state.epoch = epoch + (step + 1 + steps_skipped) / steps_in_epoch
                     self.control = self.callback_handler.on_step_end(args, self.state, self.control)
+                    print("we logged theotericay")
+                    wandb.log({"train_loss": tr_loss, "train_codebook_loss": tr_loss_codebook.item(), "train_og_loss": tr_loss_og.item()})
+                    tr_loss_codebook -= tr_loss_codebook
+                    tr_loss_og -= tr_loss_og
 
                     self._maybe_log_save_evaluate(tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval)
+
+
                 else:
                     self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
 
@@ -2353,10 +2369,7 @@ class Trainer:
         self._total_loss_scalar += tr_loss.item()
         effective_global_step = max(self.state.global_step, 0.001)  # Avoid ZeroDivisionError
         train_loss = self._total_loss_scalar / effective_global_step
-        train_codebook_loss = tr_loss_codebook.item() / effective_global_step
-        train_og_loss = tr_loss_og.item() / effective_global_step
 
-        wandb.log({"train_loss": train_loss, "train_codebook_loss": train_codebook_loss, "train_og_loss": train_og_loss})
         metrics = speed_metrics(
             "train",
             start_time,
@@ -3223,6 +3236,32 @@ class Trainer:
 
         return ctx_manager
 
+    def find_all_modules(self, model, layer: torch.nn.Module) -> list[(str, torch.nn.Module)]:
+        """
+        Finds all the modules in the model that are of type layer.
+        """
+        target_modules = set()
+        for name, module in model.named_modules():
+            if isinstance(module, layer):
+                # print(f"Found {layer} module: {name}")
+                target_modules.add((name, module))
+            # else:
+                # print(f"Found other module: {name}")
+        return list(target_modules)
+
+    def start_using_codebook(self, model) -> None:
+        """
+        Starts the using of the codebook.
+        """
+        quantize_layers = self.find_all_modules(model, Quantize)
+        for name, module in quantize_layers:
+            module.start_using_codebook = True
+
+        linear4_layers = self.find_all_modules(model, Linear4bit)
+        for name, module in linear4_layers:
+            module.start_using_codebook = True
+
+
     def training_step(self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
         """
         Perform a training step on a batch of inputs.
@@ -3268,8 +3307,8 @@ class Trainer:
             self.accelerator.backward(loss)
 
         for key, tensor in loss_object.items():
-            tensor.detach()
-            loss_object[key] = tensor / self.args.gradient_accumulation_steps
+            detached_tensor = tensor.detach()
+            loss_object[key] = detached_tensor / self.args.gradient_accumulation_steps
 
         return loss_object
 
@@ -3995,6 +4034,7 @@ class Trainer:
                     with self.compute_loss_context_manager():
                         loss_object, outputs = self.compute_loss(model, inputs, return_outputs=True)
                         loss = loss_object["total_loss"]
+                        del loss_object
                     loss = loss.mean().detach()
 
                     if isinstance(outputs, dict):

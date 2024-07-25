@@ -88,7 +88,7 @@ class Seq2SeqTrainer(Trainer):
         outputs = model(**inputs)
         loss = outputs.loss
 
-        hr_modules = self.find_all_modules(self.args, model, Linear4bit)
+        hr_modules = self.find_all_modules(model, Linear4bit)
         losses = {}
         codebook_loss = torch.tensor(0.0, requires_grad=True)
         for name, module in hr_modules:
@@ -108,7 +108,7 @@ class Seq2SeqTrainer(Trainer):
         }
         return (loss_object, outputs) if return_outputs else loss_object
 
-    def find_all_modules(self, args, model, layer: torch.nn.Module) -> list[(str, torch.nn.Module)]:
+    def find_all_modules(self, model, layer: torch.nn.Module) -> list[(str, torch.nn.Module)]:
         """
         Finds all the modules in the model that are of type layer.
         """
