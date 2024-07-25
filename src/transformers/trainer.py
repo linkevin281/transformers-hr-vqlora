@@ -2186,7 +2186,7 @@ class Trainer:
 
             step = -1
             for step, inputs in enumerate(epoch_iterator):
-                if step == args.codebook_start:
+                if step == args.codebook_start * 16:
                     self.start_using_codebook(model)
                     wandb.log({"codebook_used": torch.tensor(step)})
 
