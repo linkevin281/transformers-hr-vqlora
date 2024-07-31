@@ -2157,6 +2157,8 @@ class Trainer:
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
 
         total_batched_samples = 0
+        walked_steps = 0
+
         for epoch in range(epochs_trained, num_train_epochs):
             epoch_iterator = train_dataloader
             if hasattr(epoch_iterator, "set_epoch"):
@@ -2186,10 +2188,9 @@ class Trainer:
 
             step = -1
             for step, inputs in enumerate(epoch_iterator):
-                if step == args.codebook_start * 16:
+                walked_steps += 1
+                if walked_steps == args.codebook_start * 16:
                     self.start_using_codebook(model)
-                    wandb.log({"codebook_used": torch.tensor(step)})
-
 
                 total_batched_samples += 1
 
