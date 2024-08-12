@@ -21,6 +21,8 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset
 
+from peft.tuners.lora.bnb import Linear4bit
+
 from .generation.configuration_utils import GenerationConfig
 from .integrations.deepspeed import is_deepspeed_zero3_enabled
 from .trainer import Trainer
@@ -122,6 +124,79 @@ class Seq2SeqTrainer(Trainer):
                 "and/or exceptions. Fix these issues to train your model.\n\nThrown during validation:\n" + str(exc)
             )
         return gen_config
+
+    def compute_loss(self, model, inputs, return_outputs=False) -> Dict[str, torch.Tensor]:
+        """
+        Custom loss function for HR-QLoRA model.
+
+        Overwrites the default loss function in the Trainer class.
+        """
+
+        outputs = model(**inputs)
+        labels = inputs.get("labels") # [1,513]
+
+        cross_entropy = nn.CrossEntropyLoss()
+        kl_diverg = nn.KLDivLoss()
+        logits = outputs.get("logits") # vocab [1,513,32001]
+        layers = self.find_all_modules(model, Linear4bit)
+        breakpoint()
+        loss = loss_fct(logits.squeeze(), labels.squeeze())
+
+        # D() = decoder
+        # e = codebook vector
+        # x = input vector
+        # z = encoded vector
+        # sg[] = stop gradient
+        # B = reluctance to change encoder = 0.25 to start?
+
+        # reconstruction_loss = ||x - D(e)||^2
+        # latent/quantization error = ||z - e||^2
+        # L(x, D(e)) = ||x - D(e)||^2 + ||sg[z]-e||^2 + B||sg[e] - z||^2 + prev_layer_losses
+        # I think stop gradient means we do torch.no_grad() on the tensor when performing calc
+        # prev_layer_losses = ||sg[z]-e||^2 + B||sg[e] - z||^2
+
+        ## New loss?
+        # x = input labels
+        # M4, M16 = LLaMA4bit, LLaMA16bit
+        # CE = nn.CrossEntropyLoss()
+        # KL = nn.KLDivLoss()
+        # L(x, M4(), M16()) = CE(x, M4(x)) + KL(M4(x), M16(x))
+
+
+        # TODO: Fill new loss function and add prints
+        # Some way to extract loss from specific layers
+
+        # - We want to train the quantization error.
+        # - Each level should be computing the q error that the other layers missed.
+
+        # input: x
+        # layer 1: x - layer1(x)               = q_error1
+        # layer 2: q_error1 - layer2(q_error1) = q_error2
+        # layer 3: q_error2 - layer3(q_error2) = q_error3
+
+
+
+
+        #input
+        #########################(###)   <- Error
+        #output
+        ##############################
+
+
+
+        print(f"seq2seq      || loss: {loss}")
+
+        return (loss, outputs) if return_outputs else loss
+
+    def find_all_modules(self, model, layer: torch.nn.Module) -> list[(str, torch.nn.Module)]:
+        """
+        Finds all the modules in the model that are of type layer.
+        """
+        target_modules = set()
+        for name, module in model.named_modules():
+            if isinstance(module, layer):
+                target_modules.add((name, module))
+        return list(target_modules)
 
     def evaluate(
         self,
