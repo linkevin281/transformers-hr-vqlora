@@ -76,6 +76,8 @@ class Seq2SeqTrainer(Trainer):
             gen_config = self.load_generation_config(self.args.generation_config)
             self.model.generation_config = gen_config
 
+
+
     @staticmethod
     def load_generation_config(gen_config_arg: Union[str, GenerationConfig]) -> GenerationConfig:
         """
@@ -134,12 +136,21 @@ class Seq2SeqTrainer(Trainer):
 
         outputs = model(**inputs)
         labels = inputs.get("labels") # [1,513]
+        logits = outputs.get("logits") # vocab [1,513,32001]
+
+        # Shift so that tokens < n predict n
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = labels[..., 1:].contiguous()
 
         cross_entropy = nn.CrossEntropyLoss()
         kl_diverg = nn.KLDivLoss()
-        logits = outputs.get("logits") # vocab [1,513,32001]
+
         layers = self.find_all_modules(model, Linear4bit)
         breakpoint()
+
+
+
+        cross_entropy(shift_logits.squeeze(), shift_labels.squeeze())
         loss = loss_fct(logits.squeeze(), labels.squeeze())
 
         # D() = decoder
